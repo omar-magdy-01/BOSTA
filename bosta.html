@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة شحنات بوسطة</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#16233b;--muted:#5d6b82;--line:#d9dfe8;--bg:#f2f4f8;--card:#fff;--teal:#0f766e;--red:#b42318;--amber:#b7791f;--blue:#2457c5}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Cairo,Tahoma,sans-serif;line-height:1.6}
+header{background:var(--ink);color:#fff;padding:18px 24px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
+header h1{margin:0;font-size:1.35rem;font-weight:800}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,.btn,input,select{font:inherit}
+button,.btn{background:var(--teal);color:#fff;border:0;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600}
+button.alt,.btn.alt{background:transparent;border:1px solid #ffffff66}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f5b942;outline-offset:2px}
+button:disabled{opacity:.5;cursor:wait}
+main{max-width:1200px;margin:0 auto;padding:20px}
+#status{padding:10px 14px;border-radius:6px;background:#e7ecf4;margin-bottom:16px;min-height:44px}
+#status.err{background:#fde8e6;color:var(--red)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.kpi small{color:var(--muted);display:block}
+.kpi b{font-size:1.7rem;font-weight:800}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;margin-bottom:20px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;overflow-x:auto}
+.panel h2{margin:0 0 10px;font-size:1.05rem}
+table{border-collapse:collapse;width:100%;font-size:.92rem}
+th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600}
+.row-bar{display:grid;grid-template-columns:130px 1fr 54px;gap:10px;align-items:center;margin:6px 0}
+.track{background:#e8ecf3;border-radius:4px;height:14px;overflow:hidden}
+.fill{height:100%;background:var(--blue)}
+.fill.ok{background:var(--teal)}.fill.bad{background:var(--red)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.filters input,.filters select{padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.filters input{flex:1;min-width:200px}
+.tag{padding:2px 8px;border-radius:99px;font-size:.8rem;background:#e8ecf3}
+.tag.ok{background:#d5f0ec;color:var(--teal)}.tag.bad{background:#fde8e6;color:var(--red)}
+.note{color:var(--muted);font-size:.85rem;margin-top:8px}
+.hidden{display:none}
+@media(prefers-reduced-motion:no-preference){.fill{transition:width .4s}}
+</style>
+</head>
+<body>
+<header>
+  <h1>لوحة شحنات بوسطة</h1>
+  <div class="bar">
+    <button id="load">تحميل الشحنات من بوسطة</button>
+    <label class="btn alt" tabindex="0">فتح ملف CSV<input id="file" type="file" accept=".csv" class="hidden"></label>
+    <button id="export" class="alt">تصدير النتائج CSV</button>
+  </div>
+</header>
+
+<main>
+  <div class="panel" style="margin-bottom:16px">
+    <h2>الإعدادات</h2>
+    <div class="filters">
+      <input id="cfgW" placeholder="رابط الـ Worker (https://xxxx.workers.dev)" style="direction:ltr;text-align:left">
+      <input id="cfgK" type="password" placeholder="مفتاح الـ API" style="direction:ltr;text-align:left">
+      <button id="cfgS">حفظ وتحميل</button>
+    </div>
+    <div class="note">الإعدادات بتتحفظ على المتصفح بتاعك بس، ومش بتتكتب في الكود.</div>
+  </div>
+  <div id="status">اضغط «تحميل الشحنات من بوسطة» عشان تبدأ.</div>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="grid2">
+    <div class="panel"><h2>الشحنات حسب الحالة</h2><div id="states"></div></div>
+    <div class="panel"><h2>الأداء حسب المحافظة</h2><div id="cities"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>كل الشحنات</h2>
+    <div class="filters">
+      <input id="q" type="search" placeholder="ابحث برقم التتبع، الاسم، التليفون، العنوان">
+      <select id="fstate"><option value="">كل الحالات</option></select>
+      <select id="fcity"><option value="">كل المحافظات</option></select>
+    </div>
+    <div id="table"></div>
+    <div class="note" id="count"></div>
+  </section>
+</main>
+
+<script>
+const LS = "bostaDash.v1";
+let CFG = {worker: "https://bosta.omar-magdy-businesses.workers.dev", key: ""};
+try { const sv = JSON.parse(localStorage.getItem(LS)); if (sv) CFG = {worker: sv.worker || CFG.worker, key: sv.key || ""}; } catch {}
+const BASE = "https://app.bosta.co/api/v2/deliveries";
+const PAGE_LIMIT = 50, MAX_PAGES = 200;
+
+let ALL = [], VIEW = [];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+const fmt = n => n.toLocaleString("ar-EG", {maximumFractionDigits: 0});
+const pct = (a, b) => b ? (a / b * 100).toFixed(1) + "%" : "0%";
+
+function status(msg, err = false) { const s = $("status"); s.textContent = msg; s.className = err ? "err" : ""; }
+const get = (o, ...p) => p.reduce((a, k) => (a && typeof a === "object" ? a[k] : undefined), o);
+
+function normalize(d) {
+  const st = d.state, ty = d.type;
+  const dz = d.dropOffAddress || {};
+  const nm = x => (x && typeof x === "object") ? (x.name || x.nameAr || "") : (x || "");
+  return {
+    tracking_number: d.trackingNumber || "",
+    business_reference: d.businessReference || "",
+    state: (st && typeof st === "object") ? (st.value || "") : (st || ""),
+    state_code: (st && typeof st === "object") ? st.code : "",
+    type: (ty && typeof ty === "object") ? ty.value : (ty || ""),
+    cod: d.cod ?? 0,
+    receiver_name: get(d, "receiver", "fullName") || get(d, "receiver", "firstName") || "",
+    receiver_phone: get(d, "receiver", "phone") || "",
+    city: nm(dz.city), zone: nm(dz.zone), district: nm(dz.district),
+    address: dz.firstLine || "",
+    created_at: d.createdAt || "", updated_at: d.updatedAt || ""
+  };
+}
+
+function listFrom(p) {
+  const d = (p && p.data !== undefined) ? p.data : p;
+  if (Array.isArray(d)) return d;
+  for (const k of ["deliveries", "items", "docs", "results"]) if (d && Array.isArray(d[k])) return d[k];
+  return [];
+}
+
+async function loadFromBosta() {
+  if (!CFG.worker || !CFG.key) return status("اكتب رابط الـ Worker ومفتاح الـ API في الخانتين فوق واضغط حفظ.", true);
+  const btn = $("load"); btn.disabled = true;
+  const rows = [];
+  try {
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const target = `${BASE}?pageId=${page}&pageLimit=${PAGE_LIMIT}`;
+      const r = await fetch(CFG.worker.replace(/\/$/, "") + "/?url=" + encodeURIComponent(target), {
+        headers: { "Authorization": CFG.key }
+      });
+      if (r.status === 401) throw new Error("401: المفتاح مش مقبول أو اتلغى. جدّده من لوحة بوسطة.");
+      if (!r.ok) throw new Error("خطأ من بوسطة: " + r.status);
+      const items = listFrom(await r.json());
+      rows.push(...items);
+      status(`جاري التحميل... صفحة ${page} (${rows.length} شحنة)`);
+      if (items.length < PAGE_LIMIT) break;
+    }
+    setData(rows.map(normalize));
+    status(`تم تحميل ${rows.length} شحنة.`);
+  } catch (e) {
+    if (e instanceof TypeError) {
+      status("الطلب للـ Worker فشل. اتأكد من رابط الـ Worker، ومن إن ALLOWED_ORIGINS فيه https://omar-magdy-01.github.io بالظبط.", true);
+    } else status(e.message, true);
+  } finally { btn.disabled = false; }
+}
+
+// CSV parser بسيط بيدعم الاقتباسات
+function parseCSV(text) {
+  text = text.replace(/^\uFEFF/, "");
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cur); cur = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i+1] === "\n") i++; row.push(cur); rows.push(row); row = []; cur = ""; }
+    else cur += c;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  const head = rows.shift() || [];
+  return rows.filter(r => r.length > 1).map(r => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
+}
+
+$("file").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { setData(parseCSV(rd.result)); status(`تم فتح ${f.name}: ${ALL.length} شحنة.`); };
+  rd.readAsText(f, "utf-8");
+});
+
+const isDelivered = r => String(r.state_code) === "45" || /deliver|تسليم/i.test(r.state) && !/return|مرتجع/i.test(r.state);
+const isReturned = r => ["46", "105"].includes(String(r.state_code)) || /return|مرتجع/i.test(r.state);
+
+function setData(rows) {
+  ALL = rows;
+  fillSelect("fstate", [...new Set(rows.map(r => r.state))].filter(Boolean).sort(), "كل الحالات");
+  fillSelect("fcity", [...new Set(rows.map(r => r.city))].filter(Boolean).sort(), "كل المحافظات");
+  renderSummary(); applyFilters();
+}
+function fillSelect(id, vals, first) {
+  $(id).innerHTML = `<option value="">${first}</option>` + vals.map(v => `<option>${esc(v)}</option>`).join("");
+}
+
+function renderSummary() {
+  const total = ALL.length, del = ALL.filter(isDelivered), ret = ALL.filter(isReturned);
+  const codAll = ALL.reduce((a, r) => a + num(r.cod), 0), codDel = del.reduce((a, r) => a + num(r.cod), 0);
+  $("kpis").innerHTML = [
+    ["إجمالي الشحنات", fmt(total)],
+    ["تم التسليم", `${fmt(del.length)} (${pct(del.length, total)})`],
+    ["مرتجعات", `${fmt(ret.length)} (${pct(ret.length, total)})`],
+    ["إجمالي COD", fmt(codAll) + " ج"],
+    ["COD المسلّم", fmt(codDel) + " ج"]
+  ].map(([l, v]) => `<div class="kpi"><small>${l}</small><b>${v}</b></div>`).join("");
+
+  const sc = {}; ALL.forEach(r => sc[r.state || "غير محدد"] = (sc[r.state || "غير محدد"] || 0) + 1);
+  const max = Math.max(1, ...Object.values(sc));
+  $("states").innerHTML = Object.entries(sc).sort((a, b) => b[1] - a[1]).map(([s, n]) => {
+    const cls = /deliver|تسليم/i.test(s) ? "ok" : /return|مرتجع/i.test(s) ? "bad" : "";
+    return `<div class="row-bar"><span>${esc(s)}</span><div class="track"><div class="fill ${cls}" style="width:${n / max * 100}%"></div></div><b>${fmt(n)}</b></div>`;
+  }).join("");
+
+  const cc = {};
+  ALL.forEach(r => { const c = r.city || "غير محدد"; (cc[c] ||= {n: 0, d: 0, r: 0, cod: 0}); cc[c].n++; cc[c].cod += num(r.cod); if (isDelivered(r)) cc[c].d++; if (isReturned(r)) cc[c].r++; });
+  $("cities").innerHTML = "<table><tr><th>المحافظة</th><th>شحنات</th><th>تسليم</th><th>مرتجع</th><th>COD</th></tr>" +
+    Object.entries(cc).sort((a, b) => b[1].n - a[1].n).slice(0, 25).map(([c, v]) =>
+      `<tr><td>${esc(c)}</td><td>${fmt(v.n)}</td><td>${pct(v.d, v.n)}</td><td>${pct(v.r, v.n)}</td><td>${fmt(v.cod)}</td></tr>`).join("") + "</table>";
+}
+
+function applyFilters() {
+  const q = $("q").value.trim().toLowerCase(), s = $("fstate").value, c = $("fcity").value;
+  VIEW = ALL.filter(r => (!s || r.state === s) && (!c || r.city === c) &&
+    (!q || [r.tracking_number, r.receiver_name, r.receiver_phone, r.address, r.business_reference].join(" ").toLowerCase().includes(q)));
+  const shown = VIEW.slice(0, 500);
+  $("table").innerHTML = "<table><tr><th>رقم التتبع</th><th>الحالة</th><th>العميل</th><th>التليفون</th><th>المحافظة</th><th>المنطقة</th><th>COD</th><th>التاريخ</th></tr>" +
+    shown.map(r => {
+      const cls = isDelivered(r) ? "ok" : isReturned(r) ? "bad" : "";
+      return `<tr><td>${esc(r.tracking_number)}</td><td><span class="tag ${cls}">${esc(r.state)}</span></td><td>${esc(r.receiver_name)}</td><td>${esc(r.receiver_phone)}</td><td>${esc(r.city)}</td><td>${esc(r.zone)}</td><td>${fmt(num(r.cod))}</td><td>${esc(String(r.created_at).slice(0, 10))}</td></tr>`;
+    }).join("") + "</table>";
+  $("count").textContent = ALL.length ? `${fmt(VIEW.length)} شحنة مطابقة${VIEW.length > 500 ? " (معروض أول 500، استخدم التصدير للباقي)" : ""}` : "";
+}
+["q", "fstate", "fcity"].forEach(id => $(id).addEventListener("input", applyFilters));
+
+$("export").addEventListener("click", () => {
+  if (!VIEW.length) return status("مفيش بيانات تتصدّر.", true);
+  const cols = Object.keys(VIEW[0]);
+  const csv = [cols.join(",")].concat(VIEW.map(r => cols.map(c => `"${String(r[c] ?? "").replace(/"/g, '""')}"`).join(","))).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\uFEFF" + csv], {type: "text/csv;charset=utf-8"}));
+  a.download = "bosta_filtered.csv"; a.click();
+});
+$("load").addEventListener("click", loadFromBosta);
+$("cfgW").value = CFG.worker; $("cfgK").value = CFG.key;
+$("cfgS").addEventListener("click", () => {
+  CFG = {worker: $("cfgW").value.trim(), key: $("cfgK").value.trim()};
+  try { localStorage.setItem(LS, JSON.stringify(CFG)); } catch {}
+  loadFromBosta();
+});
+if (CFG.worker && CFG.key) loadFromBosta();
+</script>
+</body>
+</html>
